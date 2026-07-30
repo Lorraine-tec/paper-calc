@@ -161,14 +161,16 @@ tr.total td{background:#f1f5f6;font-weight:700;border-top:2px solid var(--ink);b
   <summary>核算参数 <span class="sub" id="prmSum"></span></summary>
   <div class="body">
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:13px">
-      <div class="field"><label>修边量 mm/幅</label><input type="number" id="p_trim" value="30" step="1"></div>
-      <div class="field"><label>生产损耗 %</label><input type="number" id="p_waste" value="5" step="0.5"></div>
+      <div class="field"><label>修边量 mm/幅</label><input type="number" id="p_trim" value="30" step="1"><span class="hint" style="font-size:10px">生产部：20–30（单边10–15）</span></div>
+      <div class="field"><label>生产损耗 %</label><input type="number" id="p_waste" value="7" step="0.5"></div>
       <div class="field"><label>安全库存 %</label><input type="number" id="p_safe" value="0" step="1"></div>
       <div class="field"><label>每卷原纸 吨</label><input type="number" id="p_roll" value="2" step="0.1"></div>
-      <div class="field"><label>A坑缩率</label><input type="number" id="p_A" value="1.55" step="0.01"></div>
-      <div class="field"><label>B坑缩率</label><input type="number" id="p_B" value="1.40" step="0.01"></div>
-      <div class="field"><label>C坑缩率</label><input type="number" id="p_C" value="1.45" step="0.01"></div>
-      <div class="field"><label>E坑缩率</label><input type="number" id="p_E" value="1.25" step="0.01"></div>
+      <div class="field"><label>纸芯筒 kg/卷</label><input type="number" id="p_core" value="5" step="0.5"><span class="hint" style="font-size:10px">用不了，需多买</span></div>
+      <div class="field"><label>裱面纸损耗 %</label><input type="number" id="p_fwaste" value="0" step="0.5"></div>
+      <div class="field"><label>A坑楞率</label><input type="number" id="p_A" value="1.51" step="0.01"></div>
+      <div class="field"><label>B坑楞率</label><input type="number" id="p_B" value="1.32" step="0.01"></div>
+      <div class="field"><label>C坑楞率</label><input type="number" id="p_C" value="1.44" step="0.01"></div>
+      <div class="field"><label>E坑楞率</label><input type="number" id="p_E" value="1.26" step="0.01"></div>
     </div>
     <div class="field" style="margin-bottom:13px"><label>可采购标准原纸门幅 mm（取 ≥ 需求门幅 的最小一档）</label>
       <input type="text" id="p_widths" value="1400,1750,1850,2000,2200,2300,2400,2500" style="max-width:520px"></div>
@@ -178,6 +180,8 @@ tr.total td{background:#f1f5f6;font-weight:700;border-top:2px solid var(--ink);b
       <span class="chip" id="c_dedup">剔除完全重复行</span>
       <span class="chip on" id="c_redstock">标红行走备料分纸</span>
       <span class="chip on" id="c_pdffill">用图纸补全缺失的坑型／克重</span>
+      <span class="chip" id="c_net">净料口径（不含修边，＝工程算法）</span>
+      <span class="chip on" id="c_faceroll">裱面纸按卷筒分纸（关＝按平张）</span>
     </div></div>
   </div>
 </details>
@@ -198,7 +202,7 @@ const ALLFLUTES=['A','B','C','E','BC','EA','BA','EC','EE'];
 let ALLOWED=new Set(['A','B','C','E','BC','EA','BA','EC']);
 const MONTHS=[['m12','12月'],['m1','1月'],['m2','2月'],['m3','3月']];
 const CC=['var(--c1)','var(--c2)','var(--c3)','var(--c4)','var(--c5)','var(--c6)'];
-let RAW=[], DWG=[], TAB='board', CUR={head:[],rows:[],name:'表'};
+let RAW=[], DWG=[], FACE={}, TAB='board', CUR={head:[],rows:[],name:'表'};
 
 /* ---------- 解析工具 ---------- */
 function parseSize(s){if(!s)return null;s=String(s);const g=s.match(/(\d+(?:\.\d+)?)\s*纹/);if(!g)return null;
@@ -273,10 +277,10 @@ async function readPdf(file){
 
 /* ---------- 核算 ---------- */
 function P(){const v=id=>parseFloat(document.getElementById(id).value);
-  return{trim:v('p_trim')||0,waste:(v('p_waste')||0)/100,safe:(v('p_safe')||0)/100,roll:v('p_roll')||2,
+  return{trim:v('p_trim')||0,waste:(v('p_waste')||0)/100,safe:(v('p_safe')||0)/100,roll:v('p_roll')||2,core:v('p_core')||0,
     tk:{A:v('p_A'),B:v('p_B'),C:v('p_C'),E:v('p_E')},
     widths:document.getElementById('p_widths').value.split(/[,，\s]+/).map(Number).filter(x=>x>0).sort((a,b)=>a-b),
-    dedup:on('c_dedup'),redstock:on('c_redstock'),pdffill:on('c_pdffill')};}
+    dedup:on('c_dedup'),redstock:on('c_redstock'),pdffill:on('c_pdffill'),net:on('c_net'),faceroll:on('c_faceroll'),fwaste:(v('p_fwaste')||0)/100};}
 const on=id=>document.getElementById(id).classList.contains('on');
 
 function compute(){
@@ -317,6 +321,7 @@ function compute(){
       else{x.util=sz.grain*ups/x.web; x.trimW=x.web-sz.grain*ups;}
       x.web0=Number(r.web0)||null;
     }
+    x.effW=(p.net&&sz&&ups)?sz.grain*ups:x.web;
     // 图纸比对
     if(dwg){
       x.cmp=[];
@@ -337,7 +342,7 @@ function compute(){
       x.run[k]=(sz&&ups)?q/ups*sz.len/1000:0;
       x.area[k]=(sz)?q*sz.grain*sz.len/1e6:0; x.kg[k]=0;});
     if(x.status==='ok'&&x.layers&&x.web)
-      MONTHS.forEach(([k])=>{let kg=0;x.layers.forEach(l=>{kg+=x.web/1000*x.run[k]*l.gsm*l.tk/1000;});x.kg[k]=kg*(1+p.waste);});
+      MONTHS.forEach(([k])=>{let kg=0;x.layers.forEach(l=>{kg+=x.effW/1000*x.run[k]*l.gsm*l.tk/1000;});x.kg[k]=kg*(1+p.waste);});
     if(!any)x.issues.push('四个月数量均为 0');
     if(x.status==='ok'&&(!x.layers||!x.web||!ups||!sz))x.status='check';
     recs.push(x);
@@ -350,11 +355,48 @@ function compute(){
       if(!spec.has(k))spec.set(k,{grade:l.grade,gsm:l.gsm,web:x.web,roles:new Set(),flutes:new Set(),custs:new Set(),
         kg:{m12:0,m1:0,m2:0,m3:0},m:0,area:0});
       const e=spec.get(k);e.roles.add(l.role);e.flutes.add(x.flute);e.custs.add(x.src.cust);
-      MONTHS.forEach(([m])=>{const kg=x.web/1000*x.run[m]*l.gsm*l.tk/1000*(1+p.waste);
-        e.kg[m]+=kg; e.m+=x.run[m]*l.tk; e.area+=x.web/1000*x.run[m]*l.tk;});
+      MONTHS.forEach(([m])=>{const kg=x.effW/1000*x.run[m]*l.gsm*l.tk/1000*(1+p.waste);
+        e.kg[m]+=kg; e.m+=x.run[m]*l.tk; e.area+=x.effW/1000*x.run[m]*l.tk;});
     });
   });
-  return {p,recs,spec:[...spec.values()].sort((a,b)=>a.grade.localeCompare(b.grade)||a.gsm-b.gsm||a.web-b.web)};
+  // ---- 裱面纸 ----
+  const faceRows=[];
+  recs.forEach(x=>{
+    if(x.status==='dup')return;
+    if(!/彩/.test(String(x.src.type||'')))return;
+    const d=x.dwg||null, man=FACE[String(x.src.pn||'').trim()]||{};
+    let grain=man.grain||(d?d.cutGrain:null), other=man.other||(d?d.cutLen:null), grade=null, gsm=null;
+    if(d&&d.face){const m=String(d.face).match(/([A-Za-z]+)\s*(\d{2,3})/);if(m){grade=m[1].toUpperCase();gsm=+m[2];}}
+    if(man.grade)grade=man.grade; if(man.gsm)gsm=man.gsm;
+    const f={pn:String(x.src.pn||'').trim(),cust:x.src.cust,desc:x.src.type,grain,other,grade,gsm,qty:{},kg:{},
+      from:(man.grain||man.other)?'手工':(d&&d.cutGrain?'图纸':'—'),status:x.status};
+    let tq=0;MONTHS.forEach(([m])=>{f.qty[m]=x.qty[m];f.kg[m]=0;tq+=x.qty[m];});
+    f.tq=tq; f.ok=!!(grain&&other&&gsm&&tq);
+    if(!grain||!other)f.err='缺切纸尺寸';else if(!gsm)f.err='缺面纸克重';else if(!tq)f.err='数量为0';
+    if(f.ok){
+      f.area1=grain*other/1e6;
+      if(p.faceroll){
+        let best=null;
+        p.widths.forEach(W=>{const k=Math.floor((W-p.trim)/other);if(k<1)return;const u=k*other/W;if(!best||u>best.u)best={W,k,u};});
+        if(!best){f.ok=false;f.err='短边 '+other+'mm 放不进最大门幅';}
+        else{f.web=best.W;f.strips=best.k;f.util=best.u;f.len=tq/best.k*grain/1000;
+          MONTHS.forEach(([m])=>{f.kg[m]=best.W/1000*(f.qty[m]/best.k*grain/1000)*gsm/1000*(1+p.fwaste);});}
+      }else{
+        f.web=null;f.len=tq*grain/1000;
+        MONTHS.forEach(([m])=>{f.kg[m]=f.qty[m]*f.area1*gsm/1000*(1+p.fwaste);});
+      }
+    }
+    faceRows.push(f);
+  });
+  const fspec=new Map();
+  faceRows.filter(f=>f.ok).forEach(f=>{
+    const k=(f.grade||'未标注')+'|'+f.gsm+'|'+(f.web||0);
+    if(!fspec.has(k))fspec.set(k,{grade:f.grade||'未标注',gsm:f.gsm,web:f.web,kg:{m12:0,m1:0,m2:0,m3:0},sheets:0,len:0,custs:new Set()});
+    const e=fspec.get(k);e.sheets+=f.tq;e.len+=f.len;e.custs.add(f.cust);
+    MONTHS.forEach(([m])=>e.kg[m]+=f.kg[m]);
+  });
+  return {p,recs,faceRows,faceSpec:[...fspec.values()].sort((a,b)=>a.grade.localeCompare(b.grade)||a.gsm-b.gsm),
+    spec:[...spec.values()].sort((a,b)=>a.grade.localeCompare(b.grade)||a.gsm-b.gsm||a.web-b.web)};
 }
 
 /* ---------- 格式 ---------- */
@@ -393,24 +435,30 @@ function viewBoard(R){
   const tot=sum(R.spec,e=>sum(MONTHS,m=>e.kg[m[0]]))/1000;
   const perM=MONTHS.map(([k,l])=>({l,t:sum(R.spec,e=>e.kg[k])/1000}));
   const peak=Math.max(...perM.map(x=>x.t));
-  const trimT=sum(ok,x=>x.trimW/x.web*sum(MONTHS,m=>x.kg[m[0]]))/1000;
+  const trimT=sum(ok,x=>x.trimW/x.effW*sum(MONTHS,m=>x.kg[m[0]]))/1000;
+  const other=R.p.net?tot+trimT:tot-trimT;
   const wasteT=tot-tot/(1+R.p.waste);
   const sheets=sum(R.recs,x=>x.status==='ok'?sum(MONTHS,m=>x.qty[m[0]]):0);
   const areaT=sum(ok,x=>sum(MONTHS,m=>x.area[m[0]]));
   const buy=R.recs.filter(x=>x.status==='buy'), stk=R.recs.filter(x=>x.status==='stock'), chk=R.recs.filter(x=>x.status==='check');
-  const rolls=sum(R.spec,e=>Math.ceil(sum(MONTHS,m=>e.kg[m[0]])*(1+R.p.safe)/1000/R.p.roll));
+  const usable=Math.max(R.p.roll*1000-R.p.core,1);
+  const rolls=sum(R.spec,e=>Math.ceil(sum(MONTHS,m=>e.kg[m[0]])*(1+R.p.safe)/usable));
+  const coreT=rolls*R.p.core/1000, grossT=rolls*R.p.roll;
   const unk=R.spec.filter(e=>e.grade==='未标注');
 
   const K=[
-    ['4个月原纸总需求',f1(tot),'t','含 '+f1(R.p.waste*100)+'% 生产损耗','hi'],
+    ['4个月原纸总需求',f1(tot),'t',(R.p.net?'净料口径 · 不含修边':'上机口径 · 含修边')+' · 含 '+f1(R.p.waste*100)+'% 损耗','hi'],
+    [R.p.net?'上机口径合计':'净料口径合计',f1(other),'t',R.p.net?'加上修边后要买这么多':'＝工程算法口径，供对账',''],
     ['月度峰值',f1(peak),'t',perM.find(x=>x.t===peak).l,''],
     ['原纸规格数',R.spec.length,'个','纸种 × 克重 × 门幅',''],
-    ['估算卷数',f0(rolls),'卷','按 '+R.p.roll+' t/卷','' ],
-    ['修边损耗',f1(trimT),'t',f1(trimT/tot*100)+'% 的采购量切成边料','wa'],
+    ['估算卷数',f0(rolls),'卷','整卷凑整后毛重 '+f1(grossT)+' t','' ],
+    ['纸芯筒',f1(coreT),'t',f0(rolls)+' 卷 × '+R.p.core+' kg，用不了要多买','wa'],
+    [R.p.net?'修边（未计入）':'修边损耗',f1(trimT),'t',R.p.net?'这部分买了会变边料':f1(trimT/tot*100)+'% 的采购量切成边料','wa'],
     ['生产损耗',f1(wasteT),'t','按 '+f1(R.p.waste*100)+'% 计提','wa'],
-    ['纸板张数',f0(sheets),'张','净面积 '+f0(areaT)+' ㎡',''],
+    ['纸板张数',f0(sheets),'张','上机 '+f0(sum(ok,x=>sum(MONTHS,m=>x.qty[m[0]])/x.ups))+' 张 · 净面积 '+f0(areaT)+' ㎡',''],
     ['外购纸板',buy.length,'行',f0(sum(buy,x=>sum(MONTHS,m=>x.qty[m[0]])))+' 张，不占原纸','wa'],
     ['备料分纸',stk.length,'行',f0(sum(stk,x=>sum(MONTHS,m=>x.qty[m[0]])))+' 张，用现有库存','er'],
+    ['裱面纸',f1(sum(R.faceRows.filter(f=>f.ok),f=>sum(MONTHS,m=>f.kg[m[0]]))/1000),'t',R.faceRows.length?(R.faceRows.filter(f=>f.ok).length+'/'+R.faceRows.length+' 个彩箱已算，不含在原纸里'):'无彩箱','hi'],
     ['待确认',chk.length,'行',chk.length?'参数缺失，未计入':'全部可算', chk.length?'er':'']
   ];
   let h='<div class="kpis">'+K.map(k=>'<div class="kpi '+(k[4]||'')+'"><div class="k">'+k[0]+'</div>'
@@ -440,8 +488,10 @@ function viewBoard(R){
      +'<div class="lgd" style="display:block">'+wItems.map(i=>'<span class="hint">'+i.l+' · '+i.sub+'</span>').join(' &nbsp;·&nbsp; ')+'</div></div></div>'
    +'<div class="pane"><h3>用量最大的 10 个原纸规格 (t)</h3><div class="p">'+barList(top,' t',f1)+'</div></div>'
    +'<div class="pane"><h3>按客户分摊 (t)</h3><div class="p">'+barList(cItems.map(i=>({l:i.l,v:i.v,c:'var(--c3)'})),' t',f1)+'</div></div>'
+   +'<div class="pane"><h3>门幅管理</h3><div class="p">'+deckMgmt(R,ok)+'</div></div>'
    +'</div></div>';
 
+  if(R.p.net) h='<div style="padding:0 13px"><div class="note info"><b>当前是净料口径</b>——只算纸板本身用掉的纸，和工程「数量 × 单片面积 × 克重 × 楞率」的算法一致。<b>下单要用上机口径</b>（关掉这个开关），因为整幅原纸都得付钱，两者差 '+f1(trimT)+' t。</div></div>'+h;
   if(unk.length) h='<div style="padding:0 13px"><div class="note warn"><b>'+unk.length+' 个规格纸种是「未标注」，合计 '
     +f1(sum(unk,e=>sum(MONTHS,m=>e.kg[m[0]])))+' kg／'+f1(sum(unk,e=>sum(MONTHS,m=>e.kg[m[0]]))/1000)
     +' t</b> —— 预测表里这些层只写了克重没写纸种（多为 BC 坑中层），采购下不了单，需要补。</div></div>'+h;
@@ -450,33 +500,71 @@ function viewBoard(R){
   return h;
 }
 
+function deckMgmt(R,ok){
+  const MAX=Math.max(...R.p.widths);
+  const totRun=sum(ok,x=>sum(MONTHS,m=>x.run[m[0]]));
+  if(!totRun)return '<span class="hint">无数据</span>';
+  const avg=sum(ok,x=>x.web*sum(MONTHS,m=>x.run[m[0]]))/totRun;
+  const GOOD=2300, TOP=MAX-R.p.trim;
+  const narrow=ok.filter(x=>x.web<2000);
+  const nRun=sum(narrow,x=>sum(MONTHS,m=>x.run[m[0]]));
+  const pos=v=>Math.max(0,Math.min(100,(v-1200)/(MAX-1200)*100));
+  let h='<div style="font-family:var(--mono);font-size:26px;font-weight:600;letter-spacing:-1px;line-height:1">'
+   +f0(avg)+'<span style="font-size:12px;color:var(--mute);font-weight:400"> mm 加权平均上机门幅</span></div>'
+   +'<div class="hint" style="margin:3px 0 12px">按上机米数加权 · 机台上限 '+MAX+'（扣修边后可用 '+TOP+'）</div>'
+   +'<div style="position:relative;height:26px;margin-bottom:4px">'
+   +'<div style="position:absolute;left:0;right:0;top:9px;height:9px;background:#eff3f4;border-radius:2px"></div>'
+   +'<div style="position:absolute;left:0;top:9px;height:9px;width:'+pos(avg)+'%;background:var(--c1);border-radius:2px"></div>'
+   +'<div style="position:absolute;left:'+pos(GOOD)+'%;top:3px;width:2px;height:21px;background:var(--kraft)"></div>'
+   +'<div style="position:absolute;left:'+pos(TOP)+'%;top:3px;width:2px;height:21px;background:var(--rust)"></div>'
+   +'</div>'
+   +'<div class="hint" style="position:relative;height:14px;font-size:10px">'
+   +'<span style="position:absolute;left:0">1200</span>'
+   +'<span style="position:absolute;left:'+pos(GOOD)+'%;transform:translateX(-50%);color:var(--kraft);font-weight:700">优秀 '+GOOD+'</span>'
+   +'<span style="position:absolute;right:0;color:var(--rust)">上限 '+TOP+'</span></div>'
+   +'<table style="margin-top:12px;font-size:11.5px"><tbody>'
+   +'<tr><td style="color:var(--mute);padding:3px 0">机台幅宽占用率</td><td class="n" style="font-weight:700">'+f1(avg/MAX*100)+'%</td></tr>'
+   +'<tr><td style="color:var(--mute);padding:3px 0">对比优秀线 '+GOOD+'</td><td class="n" style="font-weight:700;color:'
+   +(avg>=GOOD?'#2f6b3c':'var(--rust)')+'">'+(avg>=GOOD?'+':'')+f0(avg-GOOD)+' mm</td></tr>'
+   +'<tr><td style="color:var(--mute);padding:3px 0">窄幅（&lt;2000）占上机米</td><td class="n" style="font-weight:700">'
+   +f1(nRun/totRun*100)+'% · '+narrow.length+' 项</td></tr>'
+   +'</tbody></table>'
+   +'<div class="hint" style="margin-top:8px;line-height:1.45">窄幅不多花原纸钱，浪费的是机台产能——'
+   +'这部分能不能跟别的单拼幅，看「门幅明细」。</div>';
+  return h;
+}
+
 /* ---------- 采购清单 ---------- */
 function viewBuyList(R){
   const p=R.p;
+  const usable=Math.max(p.roll*1000-p.core,1);
   const rows=R.spec.map(e=>{
     const t=sum(MONTHS,m=>e.kg[m[0]])/1000;
     const need=t*(1+p.safe);
-    return {e,t,need,rolls:Math.ceil(need/p.roll)};
+    const rolls=Math.ceil(need*1000/usable);
+    return {e,t,need,rolls,gross:rolls*p.roll};
   });
-  const head=['原纸','克重 g/m²','门幅 mm','用途','坑型','12月 t','1月 t','2月 t','3月 t','合计 t','建议采购 t','估算卷数','长度 km','面积 万㎡','客户'];
+  const head=['原纸','克重 g/m²','门幅 mm','用途','坑型','12月 t','1月 t','2月 t','3月 t','合计 t','建议采购 t','卷数','下单毛重 t','长度 km','面积 万㎡','客户'];
   CUR={head,rows:rows.map(r=>[r.e.grade,r.e.gsm,r.e.web,[...r.e.roles].join('+'),[...r.e.flutes].join('/'),
-    ...MONTHS.map(m=>+(r.e.kg[m[0]]/1000).toFixed(3)),+r.t.toFixed(3),+r.need.toFixed(3),r.rolls,
+    ...MONTHS.map(m=>+(r.e.kg[m[0]]/1000).toFixed(3)),+r.t.toFixed(3),+r.need.toFixed(3),r.rolls,+r.gross.toFixed(2),
     +(r.e.m/1000).toFixed(2),+(r.e.area/10000).toFixed(2),[...r.e.custs].join('/')]),name:'原纸采购清单'};
   let h='<div class="scroll"><table><thead><tr><th>原纸</th><th class="n">克重</th><th class="n">门幅</th><th>用途</th><th>坑型</th>'
    +MONTHS.map(m=>'<th class="n">'+m[1]+' t</th>').join('')
-   +'<th class="n">合计 t</th><th class="n">建议采购 t</th><th class="n">卷数</th><th class="n">长度 km</th><th class="n">面积 万㎡</th><th>客户</th></tr></thead><tbody>';
+   +'<th class="n">合计 t</th><th class="n">建议采购 t</th><th class="n">卷数</th><th class="n">下单毛重 t</th><th class="n">长度 km</th><th class="n">面积 万㎡</th><th>客户</th></tr></thead><tbody>';
   rows.forEach(r=>{
     h+='<tr><td><b>'+esc(r.e.grade)+'</b>'+(r.e.grade==='未标注'?' <span class="tagx t-chk">待补</span>':'')+'</td>'
      +'<td class="n">'+r.e.gsm+'</td><td class="n"><b>'+r.e.web+'</b></td><td class="hint">'+[...r.e.roles].join('+')+'</td>'
      +'<td class="pn">'+[...r.e.flutes].join('/')+'</td>'
      +MONTHS.map(m=>'<td class="n">'+f3(r.e.kg[m[0]]/1000)+'</td>').join('')
      +'<td class="n"><b>'+f3(r.t)+'</b></td><td class="n" style="background:#f7fbfb"><b>'+f3(r.need)+'</b></td>'
-     +'<td class="n">'+r.rolls+'</td><td class="n">'+f1(r.e.m/1000)+'</td><td class="n">'+f2(r.e.area/10000)+'</td>'
+     +'<td class="n">'+r.rolls+'</td><td class="n" style="background:#f7fbfb"><b>'+f2(r.gross)+'</b></td>'
+     +'<td class="n">'+f1(r.e.m/1000)+'</td><td class="n">'+f2(r.e.area/10000)+'</td>'
      +'<td class="hint">'+esc([...r.e.custs].join(' / '))+'</td></tr>';
   });
   const T=[...MONTHS.map(m=>sum(rows,r=>r.e.kg[m[0]]/1000)),sum(rows,r=>r.t),sum(rows,r=>r.need)];
   h+='<tr class="total"><td colspan="5">合计 '+rows.length+' 个规格</td>'+T.map(v=>'<td class="n">'+f3(v)+'</td>').join('')
-   +'<td class="n">'+f0(sum(rows,r=>r.rolls))+'</td><td class="n">'+f1(sum(rows,r=>r.e.m/1000))+'</td>'
+   +'<td class="n">'+f0(sum(rows,r=>r.rolls))+'</td><td class="n">'+f2(sum(rows,r=>r.gross))+'</td>'
+   +'<td class="n">'+f1(sum(rows,r=>r.e.m/1000))+'</td>'
    +'<td class="n">'+f2(sum(rows,r=>r.e.area/10000))+'</td><td></td></tr></tbody></table></div>';
   return h;
 }
@@ -542,6 +630,67 @@ function viewDwg(R){
   return h+'</tbody></table></div>';
 }
 
+/* ---------- 裱面纸 ---------- */
+function viewFace(R){
+  const rows=R.faceRows, ok=rows.filter(f=>f.ok), miss=rows.filter(f=>!f.ok);
+  if(!rows.length) return '<div style="padding:26px;text-align:center"><p class="hint" style="max-width:56ch;margin:0 auto">'
+    +'预测表里没有「彩箱／彩盒」行。裱面纸只针对需要裱纸的彩箱——啤箱、啤盒、地盖这些不裱纸的不用算。</p></div>';
+  const tot=sum(ok,f=>sum(MONTHS,m=>f.kg[m[0]]))/1000;
+  const K=[['裱面纸总需求',f1(tot),'t','含 '+f1(R.p.fwaste*100)+'% 印刷损耗','hi'],
+    ['彩箱条目',ok.length+'/'+rows.length,'个',miss.length?miss.length+' 个缺尺寸或克重':'全部可算',miss.length?'wa':''],
+    ['面纸张数',f0(sum(ok,f=>f.tq)),'张','1 张纸板配 1 张面纸',''],
+    ['采购形态',R.p.faceroll?'卷筒':'平张','',R.p.faceroll?'按最优门幅分条':'按单张面积计，不含分纸修边','']];
+  let h='<div class="kpis">'+K.map(k=>'<div class="kpi '+(k[4]||'')+'"><div class="k">'+k[0]+'</div>'
+    +'<div class="v">'+k[1]+'<span class="u">'+k[2]+'</span></div><div class="s">'+k[3]+'</div></div>').join('')+'</div>';
+
+  // 汇总
+  h+='<div style="padding:12px 13px 4px"><div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:#3d5560;font-weight:650">面纸采购汇总</div></div>';
+  h+='<table><thead><tr><th>面纸</th><th class="n">克重</th><th class="n">门幅</th>'
+   +MONTHS.map(m=>'<th class="n">'+m[1]+' t</th>').join('')
+   +'<th class="n">合计 t</th><th class="n">建议采购 t</th><th class="n">卷数</th><th class="n">张数</th><th class="n">长度 km</th><th>客户</th></tr></thead><tbody>';
+  R.faceSpec.forEach(e=>{
+    const t=sum(MONTHS,m=>e.kg[m[0]])/1000, need=t*(1+R.p.safe);
+    h+='<tr><td><b>'+esc(e.grade)+'</b></td><td class="n">'+e.gsm+'</td><td class="n"><b>'+(e.web||'平张')+'</b></td>'
+     +MONTHS.map(m=>'<td class="n">'+f3(e.kg[m[0]]/1000)+'</td>').join('')
+     +'<td class="n"><b>'+f3(t)+'</b></td><td class="n" style="background:#f7fbfb"><b>'+f3(need)+'</b></td>'
+     +'<td class="n">'+(e.web?Math.ceil(need/R.p.roll):'—')+'</td><td class="n">'+f0(e.sheets)+'</td>'
+     +'<td class="n">'+f1(e.len/1000)+'</td><td class="hint">'+esc([...e.custs].join(' / '))+'</td></tr>';
+  });
+  h+='<tr class="total"><td colspan="3">合计 '+R.faceSpec.length+' 个规格</td>'
+   +MONTHS.map(m=>'<td class="n">'+f3(sum(R.faceSpec,e=>e.kg[m[0]]/1000))+'</td>').join('')
+   +'<td class="n">'+f3(tot)+'</td><td class="n">'+f3(tot*(1+R.p.safe))+'</td><td></td>'
+   +'<td class="n">'+f0(sum(R.faceSpec,e=>e.sheets))+'</td><td class="n">'+f1(sum(R.faceSpec,e=>e.len)/1000)+'</td><td></td></tr></tbody></table>';
+
+  // 明细
+  h+='<div style="padding:16px 13px 4px"><div style="font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:#3d5560;font-weight:650">'
+   +'逐个彩箱 <span class="hint" style="text-transform:none;letter-spacing:0;font-weight:400">— 缺尺寸的直接在格子里填，填完自动算</span></div></div>';
+  h+='<div class="scroll"><table><thead><tr><th>成品料号 / 客户</th><th>面纸</th><th class="n">克重</th>'
+   +'<th class="n">纹向 mm</th><th class="n">另一边 mm</th><th>来源</th><th class="n">分条×门幅</th><th class="n">利用率</th>'
+   +'<th class="n">四月张数</th><th class="n">长度 m</th><th class="n">重量 t</th></tr></thead><tbody>';
+  rows.forEach(f=>{
+    const inp=(k,v,ph)=>'<input type="number" data-face="'+esc(f.pn)+'" data-k="'+k+'" value="'+(v==null?'':v)
+      +'" placeholder="'+ph+'" style="width:64px;padding:2px 4px;font-size:11px">';
+    const txt=(k,v)=>'<input type="text" data-face="'+esc(f.pn)+'" data-k="'+k+'" value="'+esc(v||'')
+      +'" placeholder="CKB" style="width:56px;padding:2px 4px;font-size:11px">';
+    h+='<tr'+(f.ok?'':' style="background:#fffaf1"')+'><td><span class="pn">'+esc(f.pn)+'</span><br><span class="hint">'+esc(f.cust)+' · '+esc(f.desc||'')+'</span></td>'
+     +'<td>'+(f.from==='图纸'&&f.grade?'<b>'+esc(f.grade)+'</b>':txt('grade',f.grade))+'</td>'
+     +'<td class="n">'+(f.from==='图纸'&&f.gsm?f.gsm:inp('gsm',f.gsm,'克重'))+'</td>'
+     +'<td class="n">'+(f.from==='图纸'?f0(f.grain):inp('grain',f.grain,'纹向'))+'</td>'
+     +'<td class="n">'+(f.from==='图纸'?f0(f.other):inp('other',f.other,'另一边'))+'</td>'
+     +'<td class="hint">'+esc(f.from)+'</td>'
+     +'<td class="n">'+(f.web?f.strips+' × '+f.web:(f.ok?'平张':'—'))+'</td>'
+     +'<td class="n">'+(f.util?'<span class="util'+(f.util<0.8?' bad':'')+'">'+f1(f.util*100)+'%</span>':'—')+'</td>'
+     +'<td class="n">'+f0(f.tq)+'</td><td class="n">'+(f.len?f0(f.len):'—')+'</td>'
+     +'<td class="n"><b>'+(f.ok?f3(sum(MONTHS,m=>f.kg[m[0]])/1000):'<span class="tagx t-chk">'+esc(f.err||'待补')+'</span>')+'</b></td></tr>';
+  });
+  h+='</tbody></table></div>';
+  CUR={head:['成品料号','客户','面纸','克重','纹向','另一边','来源','分条','门幅','四月张数','长度m','12月t','1月t','2月t','3月t','合计t'],
+    rows:rows.map(f=>[f.pn,f.cust,f.grade||'',f.gsm||'',f.grain||'',f.other||'',f.from,f.strips||'',f.web||'',f.tq,
+      f.len?Math.round(f.len):'',...MONTHS.map(m=>+(f.kg[m[0]]/1000).toFixed(3)),+(sum(MONTHS,m=>f.kg[m[0]])/1000).toFixed(3)]),
+    name:'裱面纸需求'};
+  return h;
+}
+
 /* ---------- 排除 / 逐行 ---------- */
 function viewOut(R){
   const rows=R.recs.filter(x=>x.status!=='ok');
@@ -566,7 +715,7 @@ function viewRow(R){
       x.util?+(x.util*100).toFixed(1):'',Math.round(sum(MONTHS,m=>x.run[m[0]])),
       ...MONTHS.map(m=>+(x.kg[m[0]]/1000).toFixed(3)),x.status]),name:'逐行明细'};
   let h='<div class="scroll"><table><thead><tr><th class="n">行</th><th>客户 / 成品料号</th><th>坑型</th>'
-   +'<th>层结构（纸种克重 × 缩率）</th><th>层源</th><th class="n">门幅</th><th class="n">上机米</th>'
+   +'<th>层结构（纸种克重 × 楞率）</th><th>层源</th><th class="n">门幅</th><th class="n">上机米</th>'
    +MONTHS.map(m=>'<th class="n">'+m[1]+' t</th>').join('')+'<th class="n">合计 t</th></tr></thead><tbody>';
   R.recs.forEach(x=>{
     h+='<tr'+(x.status!=='ok'?' style="opacity:.45"':'')+'><td class="n">'+x.src.r+'</td>'
@@ -580,19 +729,20 @@ function viewRow(R){
 }
 
 const NOTES={
-  board:'吨位 = 采购门幅(m) × 上机米数 × 克重(g/m²) × 坑纸缩率 ÷ 1000 × (1+生产损耗)。上机米数 = 张数 ÷ 开模 × 切长。',
-  list:'建议采购量 = 合计 × (1+安全库存%)。长度按各层实际走纸计（坑纸已乘缩率），面积 = 门幅 × 该层长度。',
+  board:'上机口径：吨位 = 采购门幅(m) × 上机米数 × 克重 × 楞率 ÷ 1000 × (1+损耗)，上机米数 = 张数 ÷ 开模 × 切长。'+'净料口径：吨位 = 张数 × 单片面积 × 克重 × 楞率 ÷ 1000 × (1+损耗)。两者只差修边。',
+  list:'建议采购量 = 合计 × (1+安全库存%)；卷数按每卷可用重量（标称重 − 纸芯筒）反算并向上取整，下单毛重 = 卷数 × 标称重（含整卷凑整）。长度按各层实际走纸计（坑纸已乘楞率），面积 = 门幅 × 该层长度。',
   deck:'需求门幅 = 纹向尺寸 × 开模 + 修边量，向上取标准门幅档；利用率 = 纹向×开模 ÷ 采购门幅，低于 80% 标红。',
   dwg:'图纸只做校验和补字段，不参与吨位计算——图纸标的是切后成品尺寸，上机纸板尺寸以预测表为准。',
+  face:'裱面纸＝彩箱外面裱的那张印刷纸，不走坑机，与原纸分开采购。张数按 1 张纸板配 1 张面纸；切纸尺寸取自图纸，没图纸的可直接在表里填。',
   out:'这些行不进原纸吨位。外购纸板和备料分纸要另外下单。',
-  row:'逐行还原算式。「层源」说明克重取自纸板描述、克重列还是图纸；缩率只作用在坑纸层。'
+  row:'逐行还原算式。「层源」说明克重取自纸板描述、克重列还是图纸；楞率只作用在坑纸层。'
 };
 
 function render(){
   if(!RAW.length){document.getElementById('view').innerHTML='<div style="padding:30px;text-align:center" class="hint">先在上方「数据源」里选一个纸板需求预测表（.xlsx），核算结果会立刻出来</div>';return;}
   const R=compute();
   const c={buy:0,stock:0,dup:0,check:0,ok:0};R.recs.forEach(x=>c[x.status]++);
-  const tabs=[['board','看板',''],['list','原纸采购清单',R.spec.length],['deck','门幅明细',c.ok],
+  const tabs=[['board','看板',''],['list','原纸采购清单',R.spec.length],['face','裱面纸',R.faceRows.length||''],['deck','门幅明细',c.ok],
     ['dwg','图纸校验',DWG.length||''],['out','排除与待确认',c.buy+c.stock+c.dup+c.check],['row','逐行明细',R.recs.length]];
   document.getElementById('tabs').innerHTML=tabs.map(t=>'<button class="tab'+(TAB===t[0]?' on':'')+'" data-t="'+t[0]+'">'
     +t[1]+(t[2]!==''?'<span class="b">'+t[2]+'</span>':'')+'</button>').join('');
@@ -612,10 +762,17 @@ function render(){
   if(DWG.length&&!cmp.length&&R.recs.some(x=>x.dwg))A.push(['ok','已上传的图纸与预测表各项一致。']);
   document.getElementById('alerts').innerHTML=A.map(a=>'<div class="note '+a[0]+'">'+a[1]+'</div>').join('');
 
-  document.getElementById('view').innerHTML={board:viewBoard,list:viewBuyList,deck:viewDeck,dwg:viewDwg,out:viewOut,row:viewRow}[TAB](R);
+  document.getElementById('view').innerHTML={board:viewBoard,list:viewBuyList,face:viewFace,deck:viewDeck,dwg:viewDwg,out:viewOut,row:viewRow}[TAB](R);
+  document.querySelectorAll('[data-face]').forEach(el=>el.onchange=()=>{
+    const pn=el.dataset.face,k=el.dataset.k;
+    FACE[pn]=FACE[pn]||{};
+    const v=el.value.trim();
+    if(!v)delete FACE[pn][k]; else FACE[pn][k]=(k==='grade')?v.toUpperCase():parseFloat(v);
+    render();
+  });
   document.getElementById('footnote').textContent=NOTES[TAB];
   document.getElementById('srcSum').textContent='预测表 '+RAW.length+' 行 · 图纸 '+DWG.length+' 份';
-  document.getElementById('prmSum').textContent='修边 '+R.p.trim+'mm · 损耗 '+f1(R.p.waste*100)+'% · 缩率 B'+R.p.tk.B+'/C'+R.p.tk.C+'/E'+R.p.tk.E;
+  document.getElementById('prmSum').textContent='修边 '+R.p.trim+'mm · 损耗 '+f1(R.p.waste*100)+'% · 楞率 B'+R.p.tk.B+'/C'+R.p.tk.C+'/E'+R.p.tk.E;
 }
 
 /* ---------- 导入 ---------- */
@@ -669,8 +826,8 @@ document.getElementById('fluteChips').innerHTML=ALLFLUTES.map(f=>'<span class="c
 document.querySelectorAll('#fluteChips .chip').forEach(el=>el.onclick=()=>{const f=el.dataset.f;
   if(ALLOWED.has(f)){ALLOWED.delete(f);el.classList.replace('on','off');}else{ALLOWED.add(f);el.classList.replace('off','on');}
   if(RAW.length)render();});
-['c_dedup','c_redstock','c_pdffill'].forEach(id=>document.getElementById(id).onclick=e=>{e.target.classList.toggle('on');if(RAW.length)render();});
-['p_trim','p_waste','p_safe','p_roll','p_A','p_B','p_C','p_E','p_widths'].forEach(id=>document.getElementById(id).oninput=()=>{if(RAW.length)render();});
+['c_dedup','c_redstock','c_pdffill','c_net','c_faceroll'].forEach(id=>document.getElementById(id).onclick=e=>{e.target.classList.toggle('on');if(RAW.length)render();});
+['p_trim','p_waste','p_safe','p_roll','p_core','p_fwaste','p_A','p_B','p_C','p_E','p_widths'].forEach(id=>document.getElementById(id).oninput=()=>{if(RAW.length)render();});
 document.getElementById('print').onclick=()=>window.print();
 document.getElementById('csv').onclick=()=>{if(!CUR.rows.length)return;
   const q=v=>{const s=String(v==null?'':v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
