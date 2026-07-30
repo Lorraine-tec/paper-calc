@@ -1,0 +1,683 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>原纸需求核算看板</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+:root{
+  --ink:#0d1b22; --ink2:#3d5560; --mute:#788b94;
+  --bg:#e6eaec; --card:#fff; --rule:#c6d1d6; --rule2:#e3e9eb;
+  --teal:#0b6e75; --teal-d:#083f44; --teal-l:#e0efef;
+  --amber:#9a6400; --amber-l:#fbf0dc;
+  --rust:#9e2b16; --rust-l:#fbe6e1;
+  --slate:#66787f; --slate-l:#eceff0;
+  --kraft:#b08d3f;
+  --c1:#0b6e75; --c2:#b08d3f; --c3:#4a6d7c; --c4:#8a5a3b; --c5:#6a8f6b; --c6:#9a6400;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.num,.n{font-family:var(--mono);font-variant-numeric:tabular-nums}
+header{background:var(--ink);color:#dfe8ea;padding:16px 20px 14px}
+.wrap{max-width:1340px;margin:0 auto}
+header h1{margin:0;font-size:18px;font-weight:650;letter-spacing:-.01em}
+header h1 span{color:#7fbcc0;font-weight:400}
+header p{margin:4px 0 0;font-size:11.5px;color:#8fa5ac}
+main{padding:16px 20px 60px}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:3px;margin-bottom:12px}
+.card>summary,.card>h2{margin:0;padding:10px 14px;font-size:11.5px;font-weight:650;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink2);display:flex;align-items:center;gap:9px;cursor:pointer;list-style:none}
+.card>summary::-webkit-details-marker{display:none}
+.card>summary::before{content:"▸";color:var(--mute);font-size:11px}
+.card[open]>summary::before{content:"▾"}
+.card>summary{border-bottom:1px solid transparent}
+.card[open]>summary{border-bottom-color:var(--rule2)}
+.card .body{padding:14px}
+.sub{font-weight:400;text-transform:none;letter-spacing:0;color:var(--mute);font-size:11.5px}
+
+button{font-family:inherit;font-size:12px;border-radius:3px;cursor:pointer;border:1px solid var(--rule);background:#fff;color:var(--ink);padding:6px 12px}
+button:hover{border-color:var(--ink2)}
+button.primary{background:var(--teal);border-color:var(--teal);color:#fff;font-weight:600}
+button.primary:hover{background:var(--teal-d);border-color:var(--teal-d)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--teal);outline-offset:1px}
+input[type=number],input[type=text]{font-family:var(--mono);font-size:12px;border:1px solid var(--rule);border-radius:3px;padding:5px 7px;background:#fff;color:var(--ink);width:100%}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:600}
+.grid{display:grid;gap:11px}
+.drop{border:1.5px dashed var(--rule);border-radius:3px;padding:16px;text-align:center;background:#fafcfc}
+.drop.over{border-color:var(--teal);background:var(--teal-l)}
+.hint{color:var(--mute);font-size:11px}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-family:var(--mono);font-size:11.5px;padding:4px 9px;border:1px solid var(--rule);border-radius:99px;background:#fff;cursor:pointer;user-select:none;color:var(--ink2)}
+.chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+.chip.off{opacity:.45;text-decoration:line-through}
+.note{border-left:3px solid;padding:8px 12px;border-radius:0 3px 3px 0;margin-bottom:8px;font-size:12px}
+.note.warn{background:var(--amber-l);border-color:var(--amber);color:#5c3d00}
+.note.err{background:var(--rust-l);border-color:var(--rust);color:#6d1e0f}
+.note.info{background:var(--teal-l);border-color:var(--teal);color:#08484d}
+.note.ok{background:#e7f2e9;border-color:#3f7d4c;color:#20452a}
+
+.tabs{display:flex;border-bottom:1px solid var(--rule);flex-wrap:wrap;background:#fff}
+.tab{border:none;border-bottom:2px solid transparent;background:none;padding:9px 14px;font-size:12.5px;color:var(--mute);font-weight:600;border-radius:0}
+.tab:hover{color:var(--ink)}
+.tab.on{color:var(--teal-d);border-color:var(--teal)}
+.tab .b{font-family:var(--mono);font-size:10.5px;background:var(--slate-l);color:var(--slate);padding:1px 5px;border-radius:99px;margin-left:6px}
+.tab.on .b{background:var(--teal-l);color:var(--teal-d)}
+
+.scroll{overflow:auto;max-height:640px}
+table{border-collapse:collapse;width:100%;font-size:12px}
+th{position:sticky;top:0;z-index:2;background:#f1f5f6;text-align:left;font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink2);font-weight:650;padding:7px 8px;border-bottom:1px solid var(--rule);white-space:nowrap}
+th.n{text-align:right}
+td{padding:6px 8px;border-bottom:1px solid var(--rule2);vertical-align:middle}
+tbody tr:hover{background:#f7fafa}
+td.n{text-align:right;white-space:nowrap}
+tr.total td{background:#f1f5f6;font-weight:700;border-top:2px solid var(--ink);border-bottom:none;position:sticky;bottom:0}
+.pn{font-family:var(--mono);font-size:11px}
+.tagx{font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:2px;letter-spacing:.04em;white-space:nowrap;display:inline-block}
+.t-buy{background:var(--amber-l);color:var(--amber)}
+.t-stock{background:var(--rust-l);color:var(--rust)}
+.t-chk{background:var(--slate-l);color:var(--slate)}
+.t-ok{background:#e7f2e9;color:#2f6b3c}
+
+/* KPI */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:1px;background:var(--rule2)}
+.kpi{background:#fff;padding:13px 14px}
+.kpi .k{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);font-weight:650}
+.kpi .v{font-family:var(--mono);font-size:23px;font-weight:600;letter-spacing:-.02em;margin-top:3px;line-height:1.1}
+.kpi .u{font-size:12px;color:var(--mute);font-weight:400;margin-left:2px}
+.kpi .s{font-size:11px;color:var(--mute);margin-top:2px}
+.kpi.hi .v{color:var(--teal-d)}
+.kpi.wa .v{color:var(--amber)}
+.kpi.er .v{color:var(--rust)}
+
+.panes{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:12px}
+.pane{background:#fff;border:1px solid var(--rule);border-radius:3px}
+.pane h3{margin:0;padding:10px 13px;font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink2);border-bottom:1px solid var(--rule2);font-weight:650}
+.pane .p{padding:13px}
+.bars{display:flex;flex-direction:column;gap:7px}
+.bar{display:grid;grid-template-columns:1fr 2.1fr auto;gap:9px;align-items:center;font-size:11.5px}
+.bar .lb{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:11px}
+.bar .tr{background:#eff3f4;height:15px;border-radius:2px;overflow:hidden;display:flex}
+.bar .fl{height:100%}
+.bar .vl{font-family:var(--mono);font-size:11px;color:var(--ink2);min-width:58px;text-align:right}
+.lgd{display:flex;flex-wrap:wrap;gap:10px;margin-top:11px;font-size:11px;color:var(--ink2)}
+.lgd i{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:4px;vertical-align:-1px}
+
+.deck{display:flex;height:18px;border:1px solid var(--ink2);border-radius:2px;overflow:hidden;min-width:140px;background:#fff}
+.deck i{display:block;border-right:1px solid rgba(255,255,255,.8);background:var(--teal)}
+.deck i:last-of-type{border-right:none}
+.deck u{display:block;flex:1;background-image:repeating-linear-gradient(135deg,transparent,transparent 3px,var(--kraft) 3px,var(--kraft) 4px);background-color:#faf6ec;border-left:1px solid var(--ink2)}
+.deck.loose i{background:#7fa9ad}
+.util{font-family:var(--mono);font-size:11px}
+.util.bad{color:var(--rust);font-weight:700}
+
+.foot{color:var(--mute);font-size:11px;padding:9px 14px;border-top:1px solid var(--rule2);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.sp{flex:1}
+.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+@media print{header,.card:not(#board),.tabs,.foot,button{display:none!important} body{background:#fff}}
+@media(max-width:760px){main{padding:10px}.card .body{padding:11px}.kpi .v{font-size:19px}}
+</style>
+
+<header><div class="wrap">
+  <h1>原纸需求核算看板 <span>／ 门幅 · 吨位 · 采购清单</span></h1>
+  <p>纸板需求预测表 + 产品图纸 → 按「纸种 × 克重 × 门幅」的原纸采购量。<b>所有计算在你的浏览器里完成，文件不会上传到任何服务器。</b></p>
+</div></header>
+
+<main class="wrap">
+
+<details class="card" id="src" open>
+  <summary>数据源 <span class="sub" id="srcSum"></span></summary>
+  <div class="body">
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr))">
+      <div>
+        <div class="field" style="margin-bottom:7px"><label>① 纸板需求预测表（.xlsx）</label></div>
+        <div class="drop" id="dropX">
+          <div class="row" style="justify-content:center">
+            <button class="primary" id="pickX">选择 Excel</button>
+            </div>
+          <input type="file" id="fileX" accept=".xlsx,.xls" hidden>
+          <p class="hint" style="margin:8px 0 0">自动识别列：客户名称·半成品料号·纸板描述·纸板尺寸·纸板开模·坑型·克重·各月数量。上传的文件读不到单元格颜色，标红行请在源表加一列「标记」填“红”。</p>
+        </div>
+      </div>
+      <div>
+        <div class="field" style="margin-bottom:7px"><label>② 产品图纸（.pdf，可多选、可拖入）</label></div>
+        <div class="drop" id="dropP">
+          <div class="row" style="justify-content:center">
+            <button id="pickP">选择图纸 PDF</button>
+            <button id="clrP">清空图纸</button>
+          </div>
+          <input type="file" id="fileP" accept=".pdf" multiple hidden>
+          <p class="hint" style="margin:8px 0 0">从标题栏抓料号、坑型、层纸克重、切纸尺寸、耐破抗压，与预测表逐项比对。<b>矢量图纸</b>可解析；扫描件（图片型）抓不到字。</p>
+        </div>
+        <div id="pdfMsg"></div>
+      </div>
+    </div>
+  </div>
+</details>
+
+<details class="card" id="prm">
+  <summary>核算参数 <span class="sub" id="prmSum"></span></summary>
+  <div class="body">
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:13px">
+      <div class="field"><label>修边量 mm/幅</label><input type="number" id="p_trim" value="30" step="1"></div>
+      <div class="field"><label>生产损耗 %</label><input type="number" id="p_waste" value="5" step="0.5"></div>
+      <div class="field"><label>安全库存 %</label><input type="number" id="p_safe" value="0" step="1"></div>
+      <div class="field"><label>每卷原纸 吨</label><input type="number" id="p_roll" value="2" step="0.1"></div>
+      <div class="field"><label>A坑缩率</label><input type="number" id="p_A" value="1.55" step="0.01"></div>
+      <div class="field"><label>B坑缩率</label><input type="number" id="p_B" value="1.40" step="0.01"></div>
+      <div class="field"><label>C坑缩率</label><input type="number" id="p_C" value="1.45" step="0.01"></div>
+      <div class="field"><label>E坑缩率</label><input type="number" id="p_E" value="1.25" step="0.01"></div>
+    </div>
+    <div class="field" style="margin-bottom:13px"><label>可采购标准原纸门幅 mm（取 ≥ 需求门幅 的最小一档）</label>
+      <input type="text" id="p_widths" value="1400,1750,1850,2000,2200,2300,2400,2500" style="max-width:520px"></div>
+    <div class="field" style="margin-bottom:13px"><label>坑机可开坑型（点击切换，其余判为外购纸板）</label>
+      <div class="chips" id="fluteChips"></div></div>
+    <div class="field"><label>数据处理</label><div class="chips">
+      <span class="chip" id="c_dedup">剔除完全重复行</span>
+      <span class="chip on" id="c_redstock">标红行走备料分纸</span>
+      <span class="chip on" id="c_pdffill">用图纸补全缺失的坑型／克重</span>
+    </div></div>
+  </div>
+</details>
+
+<div class="card" id="board">
+  <div id="alerts" style="padding:13px 13px 0"></div>
+  <div class="tabs" id="tabs"></div>
+  <div id="view"></div>
+  <div class="foot"><span id="footnote"></span><span class="sp"></span>
+    <button id="print">打印看板</button><button id="csv">导出当前表 CSV</button></div>
+</div>
+</main>
+
+<script>
+if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const PLY={A:3,B:3,C:3,E:3,BC:5,EA:5,BA:5,EC:5,EE:5,AB:5,CB:5,AE:5,CE:5};
+const ALLFLUTES=['A','B','C','E','BC','EA','BA','EC','EE'];
+let ALLOWED=new Set(['A','B','C','E','BC','EA','BA','EC']);
+const MONTHS=[['m12','12月'],['m1','1月'],['m2','2月'],['m3','3月']];
+const CC=['var(--c1)','var(--c2)','var(--c3)','var(--c4)','var(--c5)','var(--c6)'];
+let RAW=[], DWG=[], TAB='board', CUR={head:[],rows:[],name:'表'};
+
+/* ---------- 解析工具 ---------- */
+function parseSize(s){if(!s)return null;s=String(s);const g=s.match(/(\d+(?:\.\d+)?)\s*纹/);if(!g)return null;
+  const n=s.replace(g[0],'').match(/\d+(?:\.\d+)?/);return n?{grain:+g[1],len:+n[0]}:null;}
+function normGrade(g){const t=(g||'').trim().toLowerCase().replace(/[\s\-_.]/g,'');
+  if(!t)return '未标注';
+  if(/^(daio|diao|dai|dao)$/.test(t))return 'Daio';
+  if(t==='bk')return 'BK'; if(t==='ca')return 'CA'; if(t==='kl')return 'KL'; if(t==='h')return 'H';
+  return (g||'').trim();}
+function expandLayers(str){if(!str)return null;let s=String(str);
+  s=s.replace(/[（(]\s*FSC\s*[)）]/gi,'').replace(/FSC/gi,'');
+  s=s.split('&')[0];
+  s=s.replace(/(BC|EA|BA|EC|EE|AB|CB|AE|CE|[ABCE])\s*坑[\s\S]*$/,'');
+  s=s.replace(/[\s（）()]/g,'');
+  if(!s)return null;const out=[];
+  for(let tok of s.split('/')){if(!tok)continue;let m;
+    if(m=tok.match(/^(\d+)\*(\d{2,3})$/)){for(let i=0;i<+m[1];i++)out.push({grade:'未标注',gsm:+m[2]});continue;}
+    if(m=tok.match(/^([A-Za-z]*)(\d{2,3})\*(\d)$/)){for(let i=0;i<+m[3];i++)out.push({grade:normGrade(m[1]),gsm:+m[2]});continue;}
+    if(m=tok.match(/^([A-Za-z]*?)(\d{2,3})$/)){out.push({grade:normGrade(m[1]),gsm:+m[2]});continue;}
+    return null;}
+  return out.length?out:null;}
+const fluteOf=f=>String(f||'').toUpperCase().replace(/[^A-Z]/g,'');
+function roleLayers(L,f,tk){const n=L.length;
+  if(n===3)return[{...L[0],role:'面纸',tk:1},{...L[1],role:'坑纸',flute:f,tk:tk[f]||1},{...L[2],role:'里纸',tk:1}];
+  if(n===5){const a=f[0]||'B',b=f[1]||a;
+    return[{...L[0],role:'面纸',tk:1},{...L[1],role:'坑纸',flute:a,tk:tk[a]||1},{...L[2],role:'中纸',tk:1},
+           {...L[3],role:'坑纸',flute:b,tk:tk[b]||1},{...L[4],role:'里纸',tk:1}];}
+  return null;}
+
+/* ---------- 图纸解析 ---------- */
+function parseDrawing(name,text){
+  const t=text.replace(/[\u3000]/g,' ');
+  const flat=t.replace(/\s+/g,'');
+  const d={file:name,raw:t,ok:false,notes:[]};
+  const stem=name.replace(/\.pdf$/i,'').trim();
+  const pns=[...t.matchAll(/\b(6[0-9][A-Z]\d{7}[A-Z])\b/g)].map(m=>m[1]);
+  d.pn = /^6[0-9][A-Z]\d{7}[A-Z]$/.test(stem) ? stem : (pns[0]||null);
+  d.subPns=[...new Set(pns)].filter(x=>x!==d.pn);
+  const cp=flat.match(/\b(\d{4}[A-Z]\d{7})\b/); if(cp)d.cpn=cp[1];
+  const mat=t.match(/([A-Za-z]{1,4}\d{2,3}裱?)\s*([ABCE]{1,2})\s*坑\s*[（(]([^）)]+)[）)]/);
+  if(mat){ d.face=mat[1]; d.flute=mat[2].toUpperCase(); d.layerStr=mat[3]; }
+  else { const f=flat.match(/([ABCE]{1,2})坑/); if(f)d.flute=f[1].toUpperCase();
+         const p=t.match(/[（(]\s*((?:[A-Za-z]*\d{2,3}\s*\/\s*){2,4}[A-Za-z]*\d{2,3})\s*[）)]/); if(p)d.layerStr=p[1]; }
+  if(d.layerStr) d.layers=expandLayers(d.layerStr);
+  let m=flat.match(/切纸尺寸[：:]?(\d+(?:\.\d+)?)纹[*×xX](\d+(?:\.\d+)?)/);
+  if(m) d.cutGrain=+m[1], d.cutLen=+m[2];
+  m=flat.match(/坑纸[\s\S]{0,80}?(\d{3,4})\s*[*×xX]\s*(\d{3,4})\s*纹/);
+  if(m) d.bdLen=+m[1], d.bdGrain=+m[2];
+  else { m=flat.match(/(\d{3,4})[*×xX](\d{3,4})纹/); if(m) d.bdLen=+m[1], d.bdGrain=+m[2]; }
+  m=flat.match(/耐破[：:]?(\d+)#/); if(m)d.burst=m[1];
+  m=flat.match(/抗压[：:]?(\d+)\s*KG/i); if(m)d.ect=m[1];
+  m=flat.match(/(\d+)\s*PCS\s*\/\s*包/i); if(m)d.pack=m[1];
+  m=flat.match(/(彩箱|彩盒|啤箱|啤盒|卡纸|坑盒)/); if(m)d.type=m[1];
+  d.ok = !!(d.pn && (d.flute||d.layers||d.bdGrain));
+  if(!d.pn) d.notes.push('抓不到成品料号');
+  if(!d.flute) d.notes.push('抓不到坑型');
+  if(!d.layers) d.notes.push('抓不到层纸克重');
+  if(!d.bdGrain && !d.cutGrain) d.notes.push('抓不到纹向尺寸');
+  return d;
+}
+async function readPdf(file){
+  const buf=await file.arrayBuffer();
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  let txt='';
+  for(let i=1;i<=pdf.numPages;i++){
+    const pg=await pdf.getPage(i);
+    const c=await pg.getTextContent();
+    txt += c.items.map(x=>x.str).join('\n')+'\n';
+  }
+  return parseDrawing(file.name,txt);
+}
+
+/* ---------- 核算 ---------- */
+function P(){const v=id=>parseFloat(document.getElementById(id).value);
+  return{trim:v('p_trim')||0,waste:(v('p_waste')||0)/100,safe:(v('p_safe')||0)/100,roll:v('p_roll')||2,
+    tk:{A:v('p_A'),B:v('p_B'),C:v('p_C'),E:v('p_E')},
+    widths:document.getElementById('p_widths').value.split(/[,，\s]+/).map(Number).filter(x=>x>0).sort((a,b)=>a-b),
+    dedup:on('c_dedup'),redstock:on('c_redstock'),pdffill:on('c_pdffill')};}
+const on=id=>document.getElementById(id).classList.contains('on');
+
+function compute(){
+  const p=P(), seen=new Map(), recs=[];
+  const dmap=new Map(); DWG.forEach(d=>{if(d.pn)dmap.set(d.pn,d)});
+  RAW.forEach(r=>{
+    const x={src:r,issues:[],status:'ok'};
+    const dwg=dmap.get(String(r.pn||'').trim()); x.dwg=dwg||null;
+    let flute=fluteOf(r.flute);
+    if(!flute && dwg&&dwg.flute&&p.pdffill){flute=dwg.flute;x.issues.push('坑型取自图纸');}
+    x.flute=flute;
+    const key=[r.cust,r.pn,r.spn,r.size,r.m12,r.m1,r.m2,r.m3].join('|');
+    if(seen.has(key)){x.dup=seen.get(key); if(p.dedup)x.status='dup';} else seen.set(key,r.r);
+    if(x.status==='ok'){
+      if(!ALLOWED.has(flute)){x.status='buy';x.why=(flute||'?')+'坑机上不了，需外购成品纸板';}
+      else if(p.redstock&&r.mark==='red'){x.status='stock';x.why='标红：走备料分纸';}
+    }
+    const sz=parseSize(r.size), ups=Number(r.ups)||0;
+    x.grain=sz?sz.grain:null; x.len=sz?sz.len:null; x.ups=ups;
+    if(!sz)x.issues.push('纸板尺寸无法识别');
+    if(!ups)x.issues.push('缺纸板开模数');
+    const want=PLY[flute]||3;
+    let L=expandLayers(r.desc), from='纸板描述';
+    const alt=expandLayers(r.gsm);
+    if(!L||L.length!==want){
+      if(alt&&alt.length===want){if(L)x.issues.push('纸板描述层数与坑型不符，改用克重列');L=alt;from='克重列';}
+      else if(p.pdffill&&dwg&&dwg.layers&&dwg.layers.length===want){L=dwg.layers;from='图纸';x.issues.push('层纸取自图纸');}
+    }else if(alt&&alt.length===want&&alt.map(v=>v.gsm).join()!==L.map(v=>v.gsm).join()){
+      x.issues.push('描述与克重列不一致（'+L.map(v=>v.gsm).join('/')+' vs '+alt.map(v=>v.gsm).join('/')+'）');
+    }
+    x.layerSrc=from;
+    x.layers=(L&&L.length===want)?roleLayers(L,flute,p.tk):null;
+    if(!x.layers)x.issues.push('层结构不完整，算不了重量');
+    if(sz&&ups){
+      x.need=sz.grain*ups+p.trim;
+      x.web=p.widths.find(w=>w>=x.need)||null;
+      if(!x.web)x.issues.push('需求门幅 '+x.need+'mm 超出最大可采购门幅');
+      else{x.util=sz.grain*ups/x.web; x.trimW=x.web-sz.grain*ups;}
+      x.web0=Number(r.web0)||null;
+    }
+    // 图纸比对
+    if(dwg){
+      x.cmp=[];
+      if(dwg.flute&&flute&&dwg.flute!==flute)x.cmp.push('坑型 图纸'+dwg.flute+' ≠ 表'+flute);
+      if(dwg.layers&&L&&dwg.layers.length===L.length){
+        const a=dwg.layers.map(v=>v.gsm), b=L.map(v=>v.gsm);
+        if(a.join()!==b.join()){
+          if(a.slice().reverse().join()===b.join())x.cmp.push('层纸克重相同但顺序相反（图纸 '+a.join('/')+'）—— 面/里需确认');
+          else x.cmp.push('层纸克重不同（图纸 '+a.join('/')+' vs 表 '+b.join('/')+'）');
+        }
+      }
+      if(dwg.bdGrain&&sz&&dwg.bdGrain!==sz.grain)
+        x.cmp.push('纹向 图纸'+dwg.bdGrain+' ≠ 表'+sz.grain+'（图纸多为切后成品尺寸，上机尺寸以表为准）');
+    }
+    x.qty={};x.run={};x.kg={};x.area={};
+    let any=false;
+    MONTHS.forEach(([k])=>{const q=Number(r[k])||0;x.qty[k]=q;if(q)any=true;
+      x.run[k]=(sz&&ups)?q/ups*sz.len/1000:0;
+      x.area[k]=(sz)?q*sz.grain*sz.len/1e6:0; x.kg[k]=0;});
+    if(x.status==='ok'&&x.layers&&x.web)
+      MONTHS.forEach(([k])=>{let kg=0;x.layers.forEach(l=>{kg+=x.web/1000*x.run[k]*l.gsm*l.tk/1000;});x.kg[k]=kg*(1+p.waste);});
+    if(!any)x.issues.push('四个月数量均为 0');
+    if(x.status==='ok'&&(!x.layers||!x.web||!ups||!sz))x.status='check';
+    recs.push(x);
+  });
+  // 汇总
+  const spec=new Map();
+  recs.filter(x=>x.status==='ok'&&x.layers&&x.web).forEach(x=>{
+    x.layers.forEach(l=>{
+      const k=l.grade+'|'+l.gsm+'|'+x.web;
+      if(!spec.has(k))spec.set(k,{grade:l.grade,gsm:l.gsm,web:x.web,roles:new Set(),flutes:new Set(),custs:new Set(),
+        kg:{m12:0,m1:0,m2:0,m3:0},m:0,area:0});
+      const e=spec.get(k);e.roles.add(l.role);e.flutes.add(x.flute);e.custs.add(x.src.cust);
+      MONTHS.forEach(([m])=>{const kg=x.web/1000*x.run[m]*l.gsm*l.tk/1000*(1+p.waste);
+        e.kg[m]+=kg; e.m+=x.run[m]*l.tk; e.area+=x.web/1000*x.run[m]*l.tk;});
+    });
+  });
+  return {p,recs,spec:[...spec.values()].sort((a,b)=>a.grade.localeCompare(b.grade)||a.gsm-b.gsm||a.web-b.web)};
+}
+
+/* ---------- 格式 ---------- */
+const f0=n=>(n||0).toLocaleString('zh-CN',{maximumFractionDigits:0});
+const f1=n=>(n||0).toLocaleString('zh-CN',{minimumFractionDigits:1,maximumFractionDigits:1});
+const f2=n=>(n||0).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const f3=n=>(n||0).toLocaleString('zh-CN',{minimumFractionDigits:3,maximumFractionDigits:3});
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const sum=(a,f)=>a.reduce((s,x)=>s+(f?f(x):x),0);
+
+function barList(items,unit,fmt){
+  const mx=Math.max(...items.map(i=>i.v),1);
+  return '<div class="bars">'+items.map((i,k)=>'<div class="bar"><span class="lb" title="'+esc(i.l)+'">'+esc(i.l)+'</span>'
+    +'<span class="tr"><span class="fl" style="width:'+(i.v/mx*100)+'%;background:'+(i.c||CC[k%6])+'"></span></span>'
+    +'<span class="vl">'+(fmt?fmt(i.v):f1(i.v))+(unit||'')+'</span></div>').join('')+'</div>';
+}
+function stackCols(cols,keys,colors){
+  const mx=Math.max(...cols.map(c=>sum(keys,k=>c.v[k]||0)),1);
+  return '<div style="display:flex;gap:14px;align-items:flex-end;height:172px;padding:0 4px">'
+   +cols.map(c=>{const t=sum(keys,k=>c.v[k]||0);
+     return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:5px">'
+      +'<div class="num" style="font-size:12px;font-weight:650">'+f1(t)+'</div>'
+      +'<div style="width:100%;height:'+(t/mx*126)+'px;display:flex;flex-direction:column-reverse;border-radius:2px;overflow:hidden;min-height:2px">'
+      +keys.map((k,i)=>{const v=c.v[k]||0;return v?'<div title="'+esc(k)+' '+f1(v)+'t" style="height:'+(v/t*100)+'%;background:'+colors[i%colors.length]+'"></div>':''}).join('')
+      +'</div><div style="font-size:11px;color:var(--mute)">'+esc(c.l)+'</div></div>';}).join('')+'</div>'
+   +'<div class="lgd">'+keys.map((k,i)=>'<span><i style="background:'+colors[i%colors.length]+'"></i>'+esc(k)+'</span>').join('')+'</div>';
+}
+function deckBar(g,u,w){if(!w)return'';const util=g*u/w;
+  let s='<div class="deck'+(util<0.8?' loose':'')+'">';
+  for(let i=0;i<Math.min(u,14);i++)s+='<i style="width:'+(g/w*100)+'%"></i>';
+  return s+'<u></u></div>';}
+
+/* ---------- 看板 ---------- */
+function viewBoard(R){
+  const ok=R.recs.filter(x=>x.status==='ok'&&x.layers&&x.web);
+  const tot=sum(R.spec,e=>sum(MONTHS,m=>e.kg[m[0]]))/1000;
+  const perM=MONTHS.map(([k,l])=>({l,t:sum(R.spec,e=>e.kg[k])/1000}));
+  const peak=Math.max(...perM.map(x=>x.t));
+  const trimT=sum(ok,x=>x.trimW/x.web*sum(MONTHS,m=>x.kg[m[0]]))/1000;
+  const wasteT=tot-tot/(1+R.p.waste);
+  const sheets=sum(R.recs,x=>x.status==='ok'?sum(MONTHS,m=>x.qty[m[0]]):0);
+  const areaT=sum(ok,x=>sum(MONTHS,m=>x.area[m[0]]));
+  const buy=R.recs.filter(x=>x.status==='buy'), stk=R.recs.filter(x=>x.status==='stock'), chk=R.recs.filter(x=>x.status==='check');
+  const rolls=sum(R.spec,e=>Math.ceil(sum(MONTHS,m=>e.kg[m[0]])*(1+R.p.safe)/1000/R.p.roll));
+  const unk=R.spec.filter(e=>e.grade==='未标注');
+
+  const K=[
+    ['4个月原纸总需求',f1(tot),'t','含 '+f1(R.p.waste*100)+'% 生产损耗','hi'],
+    ['月度峰值',f1(peak),'t',perM.find(x=>x.t===peak).l,''],
+    ['原纸规格数',R.spec.length,'个','纸种 × 克重 × 门幅',''],
+    ['估算卷数',f0(rolls),'卷','按 '+R.p.roll+' t/卷','' ],
+    ['修边损耗',f1(trimT),'t',f1(trimT/tot*100)+'% 的采购量切成边料','wa'],
+    ['生产损耗',f1(wasteT),'t','按 '+f1(R.p.waste*100)+'% 计提','wa'],
+    ['纸板张数',f0(sheets),'张','净面积 '+f0(areaT)+' ㎡',''],
+    ['外购纸板',buy.length,'行',f0(sum(buy,x=>sum(MONTHS,m=>x.qty[m[0]])))+' 张，不占原纸','wa'],
+    ['备料分纸',stk.length,'行',f0(sum(stk,x=>sum(MONTHS,m=>x.qty[m[0]])))+' 张，用现有库存','er'],
+    ['待确认',chk.length,'行',chk.length?'参数缺失，未计入':'全部可算', chk.length?'er':'']
+  ];
+  let h='<div class="kpis">'+K.map(k=>'<div class="kpi '+(k[4]||'')+'"><div class="k">'+k[0]+'</div>'
+    +'<div class="v">'+k[1]+'<span class="u">'+k[2]+'</span></div><div class="s">'+k[3]+'</div></div>').join('')+'</div>';
+
+  // 月度 × 坑型
+  const flutes=[...new Set(ok.map(x=>x.flute))].sort();
+  const cols=MONTHS.map(([k,l])=>{const v={};flutes.forEach(f=>v[f+'坑']=sum(ok.filter(x=>x.flute===f),x=>x.kg[k])/1000);return{l,v};});
+  // 门幅
+  const byW=new Map();
+  ok.forEach(x=>{const t=sum(MONTHS,m=>x.kg[m[0]])/1000;
+    if(!byW.has(x.web))byW.set(x.web,{t:0,u:[],n:0});
+    const e=byW.get(x.web);e.t+=t;e.u.push(x.util);e.n++;});
+  const wItems=[...byW.entries()].sort((a,b)=>b[0]-a[0]).map(([w,e])=>({l:w+' mm',v:e.t,
+    sub:'均利用率 '+f1(sum(e.u)/e.u.length*100)+'%'}));
+  // Top 规格
+  const top=R.spec.map(e=>({l:e.grade+' '+e.gsm+'g · '+e.web,v:sum(MONTHS,m=>e.kg[m[0]])/1000}))
+    .sort((a,b)=>b.v-a.v).slice(0,10);
+  // 客户
+  const byC=new Map(); ok.forEach(x=>byC.set(x.src.cust,(byC.get(x.src.cust)||0)+sum(MONTHS,m=>x.kg[m[0]])/1000));
+  const cItems=[...byC.entries()].sort((a,b)=>b[1]-a[1]).map(([l,v])=>({l,v}));
+
+  h+='<div style="padding:12px"><div class="panes">'
+   +'<div class="pane"><h3>月度原纸需求 · 按坑型 (t)</h3><div class="p">'+stackCols(cols,flutes.map(f=>f+'坑'),CC)+'</div></div>'
+   +'<div class="pane"><h3>按门幅分布 (t)</h3><div class="p">'
+     +barList(wItems.map(i=>({l:i.l,v:i.v,c:'var(--c1)'})),' t',f1)
+     +'<div class="lgd" style="display:block">'+wItems.map(i=>'<span class="hint">'+i.l+' · '+i.sub+'</span>').join(' &nbsp;·&nbsp; ')+'</div></div></div>'
+   +'<div class="pane"><h3>用量最大的 10 个原纸规格 (t)</h3><div class="p">'+barList(top,' t',f1)+'</div></div>'
+   +'<div class="pane"><h3>按客户分摊 (t)</h3><div class="p">'+barList(cItems.map(i=>({l:i.l,v:i.v,c:'var(--c3)'})),' t',f1)+'</div></div>'
+   +'</div></div>';
+
+  if(unk.length) h='<div style="padding:0 13px"><div class="note warn"><b>'+unk.length+' 个规格纸种是「未标注」，合计 '
+    +f1(sum(unk,e=>sum(MONTHS,m=>e.kg[m[0]])))+' kg／'+f1(sum(unk,e=>sum(MONTHS,m=>e.kg[m[0]]))/1000)
+    +' t</b> —— 预测表里这些层只写了克重没写纸种（多为 BC 坑中层），采购下不了单，需要补。</div></div>'+h;
+
+  CUR={head:['指标','数值','单位','说明'],rows:K.map(k=>[k[0],String(k[1]).replace(/,/g,''),k[2],k[3]]),name:'看板指标'};
+  return h;
+}
+
+/* ---------- 采购清单 ---------- */
+function viewBuyList(R){
+  const p=R.p;
+  const rows=R.spec.map(e=>{
+    const t=sum(MONTHS,m=>e.kg[m[0]])/1000;
+    const need=t*(1+p.safe);
+    return {e,t,need,rolls:Math.ceil(need/p.roll)};
+  });
+  const head=['原纸','克重 g/m²','门幅 mm','用途','坑型','12月 t','1月 t','2月 t','3月 t','合计 t','建议采购 t','估算卷数','长度 km','面积 万㎡','客户'];
+  CUR={head,rows:rows.map(r=>[r.e.grade,r.e.gsm,r.e.web,[...r.e.roles].join('+'),[...r.e.flutes].join('/'),
+    ...MONTHS.map(m=>+(r.e.kg[m[0]]/1000).toFixed(3)),+r.t.toFixed(3),+r.need.toFixed(3),r.rolls,
+    +(r.e.m/1000).toFixed(2),+(r.e.area/10000).toFixed(2),[...r.e.custs].join('/')]),name:'原纸采购清单'};
+  let h='<div class="scroll"><table><thead><tr><th>原纸</th><th class="n">克重</th><th class="n">门幅</th><th>用途</th><th>坑型</th>'
+   +MONTHS.map(m=>'<th class="n">'+m[1]+' t</th>').join('')
+   +'<th class="n">合计 t</th><th class="n">建议采购 t</th><th class="n">卷数</th><th class="n">长度 km</th><th class="n">面积 万㎡</th><th>客户</th></tr></thead><tbody>';
+  rows.forEach(r=>{
+    h+='<tr><td><b>'+esc(r.e.grade)+'</b>'+(r.e.grade==='未标注'?' <span class="tagx t-chk">待补</span>':'')+'</td>'
+     +'<td class="n">'+r.e.gsm+'</td><td class="n"><b>'+r.e.web+'</b></td><td class="hint">'+[...r.e.roles].join('+')+'</td>'
+     +'<td class="pn">'+[...r.e.flutes].join('/')+'</td>'
+     +MONTHS.map(m=>'<td class="n">'+f3(r.e.kg[m[0]]/1000)+'</td>').join('')
+     +'<td class="n"><b>'+f3(r.t)+'</b></td><td class="n" style="background:#f7fbfb"><b>'+f3(r.need)+'</b></td>'
+     +'<td class="n">'+r.rolls+'</td><td class="n">'+f1(r.e.m/1000)+'</td><td class="n">'+f2(r.e.area/10000)+'</td>'
+     +'<td class="hint">'+esc([...r.e.custs].join(' / '))+'</td></tr>';
+  });
+  const T=[...MONTHS.map(m=>sum(rows,r=>r.e.kg[m[0]]/1000)),sum(rows,r=>r.t),sum(rows,r=>r.need)];
+  h+='<tr class="total"><td colspan="5">合计 '+rows.length+' 个规格</td>'+T.map(v=>'<td class="n">'+f3(v)+'</td>').join('')
+   +'<td class="n">'+f0(sum(rows,r=>r.rolls))+'</td><td class="n">'+f1(sum(rows,r=>r.e.m/1000))+'</td>'
+   +'<td class="n">'+f2(sum(rows,r=>r.e.area/10000))+'</td><td></td></tr></tbody></table></div>';
+  return h;
+}
+
+/* ---------- 门幅明细 ---------- */
+function viewDeck(R){
+  const map=new Map();
+  R.recs.filter(x=>x.status==='ok').forEach(x=>{
+    const k=[x.src.spn,x.src.size,x.flute,x.ups].join('|');
+    if(!map.has(k))map.set(k,{spn:x.src.spn,cust:x.src.cust,size:x.src.size,flute:x.flute,ups:x.ups,grain:x.grain,
+      len:x.len,need:x.need,web:x.web,util:x.util,trimW:x.trimW,web0:x.web0,n:0,q:0,run:0,kg:0,iss:new Set(),cmp:new Set()});
+    const e=map.get(k);e.n++;x.issues.forEach(i=>e.iss.add(i));(x.cmp||[]).forEach(i=>e.cmp.add(i));
+    MONTHS.forEach(([m])=>{e.q+=x.qty[m];e.run+=x.run[m];e.kg+=x.kg[m];});
+  });
+  const rows=[...map.values()].sort((a,b)=>(b.web||0)-(a.web||0)||b.kg-a.kg);
+  CUR={head:['半成品料号','客户','坑型','纸板尺寸','开模','需求门幅','采购门幅','修边 mm','利用率%','四月张数','上机米','原纸 t'],
+    rows:rows.map(e=>[e.spn,e.cust,e.flute,e.size,e.ups,e.need,e.web,e.trimW,e.util?+(e.util*100).toFixed(1):'',
+      e.q,Math.round(e.run),+(e.kg/1000).toFixed(3)]),name:'门幅明细'};
+  let h='<div class="scroll"><table><thead><tr><th>半成品料号 / 客户</th><th>坑型</th><th>纸板尺寸</th><th class="n">开模</th>'
+   +'<th style="min-width:160px">门幅占用</th><th class="n">需求</th><th class="n">采购门幅</th><th class="n">修边</th>'
+   +'<th class="n">利用率</th><th class="n">四月张数</th><th class="n">上机米</th><th class="n">原纸 t</th></tr></thead><tbody>';
+  rows.forEach(e=>{const u=e.util||0;
+    h+='<tr><td><span class="pn">'+esc(e.spn)+'</span><br><span class="hint">'+esc(e.cust)+(e.n>1?' · '+e.n+'个成品共用':'')+'</span></td>'
+     +'<td><b>'+esc(e.flute)+'</b></td><td class="pn">'+esc(e.size)+'</td><td class="n">'+e.ups+'</td>'
+     +'<td>'+deckBar(e.grain,e.ups,e.web)+'</td><td class="n">'+f0(e.need)+'</td>'
+     +'<td class="n"><b>'+(e.web?f0(e.web):'—')+'</b>'+(e.web0&&e.web&&e.web0!==e.web?'<br><span class="hint">原表'+e.web0+'</span>':'')+'</td>'
+     +'<td class="n">'+(e.trimW!=null?f0(e.trimW):'—')+'</td>'
+     +'<td class="n"><span class="util'+(u<0.8?' bad':'')+'">'+(u?f1(u*100)+'%':'—')+'</span></td>'
+     +'<td class="n">'+f0(e.q)+'</td><td class="n">'+f0(e.run)+'</td><td class="n"><b>'+f3(e.kg/1000)+'</b></td></tr>';
+    const msgs=[...e.cmp].map(m=>'<span class="tagx t-buy">图纸</span> '+esc(m)).concat([...e.iss].map(m=>'<span class="tagx t-chk">注意</span> '+esc(m)));
+    if(msgs.length)h+='<tr><td colspan="12" style="padding-top:0"><span class="hint">'+msgs.join(' &nbsp; ')+'</span></td></tr>';
+  });
+  return h+'</tbody></table></div>';
+}
+
+/* ---------- 图纸库 ---------- */
+function viewDwg(R){
+  if(!DWG.length) return '<div style="padding:26px;text-align:center"><p class="hint" style="max-width:56ch;margin:0 auto">'
+    +'还没上传图纸。图纸不是核算的必需项——门幅和吨位靠预测表就能算出来。上传图纸是为了<b>校验</b>：'
+    +'坑型、层纸克重、纹向尺寸对不对，以及补上预测表里没填的字段。<br><br>'
+    +'在上方「数据源 → ② 产品图纸」里选 PDF，可多选。</p></div>';
+  const idx=new Map(); R.recs.forEach(x=>{if(!idx.has(String(x.src.pn).trim()))idx.set(String(x.src.pn).trim(),x)});
+  CUR={head:['图纸文件','成品料号','客户料号','类型','坑型','面纸','层纸','切纸尺寸','坑纸板尺寸','耐破','抗压','匹配','比对'],
+    rows:DWG.map(d=>{const x=idx.get(d.pn);
+      return [d.file,d.pn||'',d.cpn||'',d.type||'',d.flute||'',d.face||'',d.layerStr||'',
+        d.cutGrain?d.cutGrain+'纹*'+d.cutLen:'',d.bdGrain?d.bdLen+'*'+d.bdGrain+'纹':'',d.burst||'',d.ect||'',
+        x?'已匹配':'表中无此料号',x?(x.cmp||[]).join('；'):''];}),name:'图纸解析'};
+  let h='<div class="scroll"><table><thead><tr><th>图纸</th><th>成品料号 / 客户料号</th><th>坑型 / 面纸</th><th>层纸</th>'
+   +'<th>切纸尺寸</th><th>坑纸板尺寸</th><th>耐破 / 抗压</th><th>与预测表比对</th></tr></thead><tbody>';
+  DWG.forEach(d=>{
+    const x=idx.get(d.pn);
+    let st = !d.pn ? ['t-chk','未识别'] : (!x ? ['t-buy','表中无此料号'] : ((x.cmp&&x.cmp.length)?['t-buy','有差异']:['t-ok','一致']));
+    h+='<tr><td><span class="pn">'+esc(d.file)+'</span><br><span class="tagx '+st[0]+'">'+st[1]+'</span></td>'
+     +'<td><b class="pn">'+esc(d.pn||'—')+'</b><br><span class="pn hint">'+esc(d.cpn||'')+'</span>'+(d.type?'<br><span class="hint">'+esc(d.type)+'</span>':'')+'</td>'
+     +'<td><b>'+esc(d.flute||'—')+'坑</b><br><span class="hint">'+esc(d.face||'')+'</span></td>'
+     +'<td class="pn">'+esc(d.layerStr||'—')+'</td>'
+     +'<td class="pn">'+(d.cutGrain?d.cutGrain+'纹×'+d.cutLen:'—')+'</td>'
+     +'<td class="pn">'+(d.bdGrain?d.bdLen+'×'+d.bdGrain+'纹':'—')+'</td>'
+     +'<td class="pn">'+(d.burst?d.burst+'# / ':'')+(d.ect?d.ect+'KG':(d.burst?'':'—'))+'</td>'
+     +'<td class="hint">'+(x&&x.cmp&&x.cmp.length?x.cmp.map(esc).join('<br>'):(x?'各项一致':(d.pn?'预测表里找不到 '+esc(d.pn):'')))
+       +(d.notes.length?'<br><span style="color:var(--rust)">'+d.notes.map(esc).join('；')+'</span>':'')+'</td></tr>';
+  });
+  return h+'</tbody></table></div>';
+}
+
+/* ---------- 排除 / 逐行 ---------- */
+function viewOut(R){
+  const rows=R.recs.filter(x=>x.status!=='ok');
+  const rsn=x=>x.why||(x.status==='dup'?'与第'+x.dup+'行完全重复':x.issues.join('；'));
+  CUR={head:['状态','客户','成品料号','半成品料号','坑型','纸板尺寸','12月','1月','2月','3月','原因'],
+    rows:rows.map(x=>[x.status,x.src.cust,x.src.pn,x.src.spn,x.flute,x.src.size,
+      ...MONTHS.map(m=>x.qty[m[0]]),rsn(x)]),name:'排除与待确认'};
+  const tag={buy:['t-buy','外购纸板'],stock:['t-stock','备料分纸'],dup:['t-chk','重复行'],check:['t-chk','待确认']};
+  let h='<div class="scroll"><table><thead><tr><th>状态</th><th>客户 / 成品料号</th><th>半成品料号</th><th>坑型</th><th>纸板尺寸</th>'
+   +MONTHS.map(m=>'<th class="n">'+m[1]+'</th>').join('')+'<th class="n">四月合计</th><th>说明</th></tr></thead><tbody>';
+  rows.forEach(x=>{const t=tag[x.status]||['t-chk',x.status];
+    h+='<tr><td><span class="tagx '+t[0]+'">'+t[1]+'</span></td><td>'+esc(x.src.cust)+'<br><span class="pn hint">'+esc(x.src.pn)+'</span></td>'
+     +'<td class="pn">'+esc(x.src.spn)+'</td><td>'+esc(x.flute)+'</td><td class="pn">'+esc(x.src.size)+'</td>'
+     +MONTHS.map(m=>'<td class="n">'+f0(x.qty[m[0]])+'</td>').join('')
+     +'<td class="n"><b>'+f0(sum(MONTHS,m=>x.qty[m[0]]))+'</b></td><td class="hint">'+esc(rsn(x))+'</td></tr>';});
+  return h+'</tbody></table></div>';
+}
+function viewRow(R){
+  CUR={head:['行','客户','成品料号','半成品料号','坑型','层结构','层源','门幅','利用率%','上机米','12月t','1月t','2月t','3月t','状态'],
+    rows:R.recs.map(x=>[x.src.r,x.src.cust,x.src.pn,x.src.spn,x.flute,
+      x.layers?x.layers.map(l=>l.grade+l.gsm+'×'+l.tk).join(' / '):'',x.layerSrc,x.web||'',
+      x.util?+(x.util*100).toFixed(1):'',Math.round(sum(MONTHS,m=>x.run[m[0]])),
+      ...MONTHS.map(m=>+(x.kg[m[0]]/1000).toFixed(3)),x.status]),name:'逐行明细'};
+  let h='<div class="scroll"><table><thead><tr><th class="n">行</th><th>客户 / 成品料号</th><th>坑型</th>'
+   +'<th>层结构（纸种克重 × 缩率）</th><th>层源</th><th class="n">门幅</th><th class="n">上机米</th>'
+   +MONTHS.map(m=>'<th class="n">'+m[1]+' t</th>').join('')+'<th class="n">合计 t</th></tr></thead><tbody>';
+  R.recs.forEach(x=>{
+    h+='<tr'+(x.status!=='ok'?' style="opacity:.45"':'')+'><td class="n">'+x.src.r+'</td>'
+     +'<td>'+esc(x.src.cust)+'<br><span class="pn hint">'+esc(x.src.pn)+'</span></td><td>'+esc(x.flute)+'</td>'
+     +'<td class="pn">'+(x.layers?x.layers.map(l=>'<span title="'+l.role+(l.flute?' '+l.flute+'坑':'')+'">'+esc(l.grade)+l.gsm+(l.tk!==1?'<span style="color:var(--kraft)">×'+l.tk+'</span>':'')+'</span>').join(' <span class="hint">/</span> '):'<span class="hint">—</span>')+'</td>'
+     +'<td class="hint">'+esc(x.layerSrc||'')+'</td><td class="n">'+(x.web||'—')+'</td>'
+     +'<td class="n">'+f0(sum(MONTHS,m=>x.run[m[0]]))+'</td>'
+     +MONTHS.map(m=>'<td class="n">'+(x.kg[m[0]]?f3(x.kg[m[0]]/1000):'—')+'</td>').join('')
+     +'<td class="n"><b>'+f3(sum(MONTHS,m=>x.kg[m[0]])/1000)+'</b></td></tr>';});
+  return h+'</tbody></table></div>';
+}
+
+const NOTES={
+  board:'吨位 = 采购门幅(m) × 上机米数 × 克重(g/m²) × 坑纸缩率 ÷ 1000 × (1+生产损耗)。上机米数 = 张数 ÷ 开模 × 切长。',
+  list:'建议采购量 = 合计 × (1+安全库存%)。长度按各层实际走纸计（坑纸已乘缩率），面积 = 门幅 × 该层长度。',
+  deck:'需求门幅 = 纹向尺寸 × 开模 + 修边量，向上取标准门幅档；利用率 = 纹向×开模 ÷ 采购门幅，低于 80% 标红。',
+  dwg:'图纸只做校验和补字段，不参与吨位计算——图纸标的是切后成品尺寸，上机纸板尺寸以预测表为准。',
+  out:'这些行不进原纸吨位。外购纸板和备料分纸要另外下单。',
+  row:'逐行还原算式。「层源」说明克重取自纸板描述、克重列还是图纸；缩率只作用在坑纸层。'
+};
+
+function render(){
+  if(!RAW.length){document.getElementById('view').innerHTML='<div style="padding:30px;text-align:center" class="hint">先在上方「数据源」里选一个纸板需求预测表（.xlsx），核算结果会立刻出来</div>';return;}
+  const R=compute();
+  const c={buy:0,stock:0,dup:0,check:0,ok:0};R.recs.forEach(x=>c[x.status]++);
+  const tabs=[['board','看板',''],['list','原纸采购清单',R.spec.length],['deck','门幅明细',c.ok],
+    ['dwg','图纸校验',DWG.length||''],['out','排除与待确认',c.buy+c.stock+c.dup+c.check],['row','逐行明细',R.recs.length]];
+  document.getElementById('tabs').innerHTML=tabs.map(t=>'<button class="tab'+(TAB===t[0]?' on':'')+'" data-t="'+t[0]+'">'
+    +t[1]+(t[2]!==''?'<span class="b">'+t[2]+'</span>':'')+'</button>').join('');
+  document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{TAB=b.dataset.t;render();});
+
+  const A=[];
+  const dups=R.recs.filter(x=>x.dup);
+  if(dups.length)A.push([R.p.dedup?'info':'err','<b>'+dups.length+' 行与前面某行逐字段完全重复</b>（第 '+dups.map(x=>x.src.r).join('、')+' 行）。'
+    +(R.p.dedup?'已剔除。':'当前<b>未剔除，这部分吨位是翻倍的</b>——先确认是两笔真实订单还是复制重复，再到「核算参数」里切换。')]);
+  if(c.buy)A.push(['warn','<b>'+c.buy+' 行需外购成品纸板</b>——坑型不在可开清单内，坑机做不出来。']);
+  if(c.stock)A.push(['warn','<b>'+c.stock+' 行走备料分纸</b>——标红的小批量，不占用新原纸。']);
+  if(c.check)A.push(['warn','<b>'+c.check+' 行缺关键参数</b>（开模数／尺寸／克重解析不出），未计入吨位。']);
+  const mm=R.recs.filter(x=>x.web&&x.web0&&x.web!==x.web0);
+  if(mm.length)A.push(['info','<b>'+mm.length+' 行算出的门幅与原表「纸副」列不同</b>（第 '+mm.map(x=>x.src.r).join('、')+' 行）。调修边量可对齐大部分，剩下的多半是原表开模数或纹向尺寸填错。']);
+  const cmp=R.recs.filter(x=>x.cmp&&x.cmp.length);
+  if(cmp.length)A.push(['warn','<b>'+cmp.length+' 行与图纸对不上</b>，见「图纸校验」。']);
+  if(DWG.length&&!cmp.length&&R.recs.some(x=>x.dwg))A.push(['ok','已上传的图纸与预测表各项一致。']);
+  document.getElementById('alerts').innerHTML=A.map(a=>'<div class="note '+a[0]+'">'+a[1]+'</div>').join('');
+
+  document.getElementById('view').innerHTML={board:viewBoard,list:viewBuyList,deck:viewDeck,dwg:viewDwg,out:viewOut,row:viewRow}[TAB](R);
+  document.getElementById('footnote').textContent=NOTES[TAB];
+  document.getElementById('srcSum').textContent='预测表 '+RAW.length+' 行 · 图纸 '+DWG.length+' 份';
+  document.getElementById('prmSum').textContent='修边 '+R.p.trim+'mm · 损耗 '+f1(R.p.waste*100)+'% · 缩率 B'+R.p.tk.B+'/C'+R.p.tk.C+'/E'+R.p.tk.E;
+}
+
+/* ---------- 导入 ---------- */
+const HMAP=[['cust',/客户名称/],['pn',/美达料号|成品料号/],['type',/成品描述/],['spn',/半成品料号|纸板料号/],
+  ['desc',/纸板描述/],['web0',/纸副|纸幅|门幅/],['size',/纸板尺寸/],['ups',/纸板开模|开模/],
+  ['flute',/坑型/],['gsm',/克重/],['m12',/12月/],['m1',/(^|[^12])1月/],['m2',/2月/],['m3',/3月/],
+  ['sales',/业务员/],['model',/机种/],['cpn',/客户料号/],['mark',/标记|状态/]];
+function loadRows(arr){
+  if(!arr.length)return alert('这张表里没读到数据行');
+  const keys=Object.keys(arr[0]),col={};
+  HMAP.forEach(([k,re])=>{const hit=keys.find(h=>re.test(String(h).replace(/[\s\n]/g,''))&&!Object.values(col).includes(h));if(hit)col[k]=hit;});
+  const miss=['spn','size','ups','flute'].filter(k=>!col[k]);
+  RAW=arr.map((o,i)=>{const r={r:i+2,mark:''};Object.entries(col).forEach(([k,h])=>r[k]=o[h]);
+    r.mark=/红|red|备料/.test(String(r.mark||''))?'red':'';return r;}).filter(r=>r.spn||r.size);
+  document.getElementById('pdfMsg').innerHTML='';
+  document.querySelector('#src .body').insertAdjacentHTML('beforeend','<div class="note '+(miss.length?'warn':'info')+'" style="margin-top:11px">读入 <b>'+RAW.length+'</b> 行，识别到 '+Object.keys(col).length+' 列。'+(miss.length?'<b>缺必需列：'+miss.join('、')+'</b>':'')+'</div>');
+  render();
+}
+function bindDrop(el,inp,fn){
+  ['dragover','dragenter'].forEach(t=>el.addEventListener(t,e=>{e.preventDefault();el.classList.add('over')}));
+  ['dragleave','drop'].forEach(t=>el.addEventListener(t,e=>{e.preventDefault();el.classList.remove('over')}));
+  el.addEventListener('drop',e=>fn([...e.dataTransfer.files]));
+  inp.onchange=e=>fn([...e.target.files]);
+}
+function takeXlsx(fs){const f=fs.find(f=>/\.xlsx?$/i.test(f.name));if(!f)return;
+  const fr=new FileReader();
+  fr.onload=ev=>{try{const wb=XLSX.read(new Uint8Array(ev.target.result),{type:'array'});
+    loadRows(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:null}));}
+    catch(err){alert('读不了这个文件：'+err.message+'\n请确认是 .xlsx 且第一行是列标题。');}};
+  fr.readAsArrayBuffer(f);}
+async function takePdf(fs){
+  const list=fs.filter(f=>/\.pdf$/i.test(f.name));if(!list.length)return;
+  const box=document.getElementById('pdfMsg');
+  box.innerHTML='<div class="note info" style="margin-top:11px">正在解析 '+list.length+' 份图纸…</div>';
+  for(const f of list){
+    try{const d=await readPdf(f); DWG=DWG.filter(x=>x.file!==d.file); DWG.push(d);}
+    catch(e){DWG.push({file:f.name,notes:['读不了：'+e.message],ok:false});}
+  }
+  const bad=DWG.filter(d=>!d.ok).length;
+  box.innerHTML='<div class="note '+(bad?'warn':'ok')+'" style="margin-top:11px">已解析 <b>'+DWG.length+'</b> 份图纸'
+    +(bad?'，其中 <b>'+bad+'</b> 份抓不全（多半是扫描件）。':'。')+' 见「图纸校验」页。</div>';
+  TAB='dwg'; render();
+}
+bindDrop(document.getElementById('dropX'),document.getElementById('fileX'),takeXlsx);
+bindDrop(document.getElementById('dropP'),document.getElementById('fileP'),takePdf);
+document.getElementById('pickX').onclick=()=>document.getElementById('fileX').click();
+document.getElementById('pickP').onclick=()=>document.getElementById('fileP').click();
+document.getElementById('clrP').onclick=()=>{DWG=[];document.getElementById('pdfMsg').innerHTML='';render();};
+
+document.getElementById('fluteChips').innerHTML=ALLFLUTES.map(f=>'<span class="chip '+(ALLOWED.has(f)?'on':'off')+'" data-f="'+f+'">'+f+'坑</span>').join('');
+document.querySelectorAll('#fluteChips .chip').forEach(el=>el.onclick=()=>{const f=el.dataset.f;
+  if(ALLOWED.has(f)){ALLOWED.delete(f);el.classList.replace('on','off');}else{ALLOWED.add(f);el.classList.replace('off','on');}
+  if(RAW.length)render();});
+['c_dedup','c_redstock','c_pdffill'].forEach(id=>document.getElementById(id).onclick=e=>{e.target.classList.toggle('on');if(RAW.length)render();});
+['p_trim','p_waste','p_safe','p_roll','p_A','p_B','p_C','p_E','p_widths'].forEach(id=>document.getElementById(id).oninput=()=>{if(RAW.length)render();});
+document.getElementById('print').onclick=()=>window.print();
+document.getElementById('csv').onclick=()=>{if(!CUR.rows.length)return;
+  const q=v=>{const s=String(v==null?'':v);return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;};
+  const csv='\ufeff'+[CUR.head.join(',')].concat(CUR.rows.map(r=>r.map(q).join(','))).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=CUR.name+'.csv';a.click();};
+
+const DEMO=[];
+render();
+</script>
